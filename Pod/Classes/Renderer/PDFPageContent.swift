@@ -127,6 +127,13 @@ internal class PDFPageContent: UIView {
         return PDFDocumentLink(rect: rect, dictionary:annotation)
     }
     
+    private func highlightFromAnnotation(_ annotation: CGPDFDictionaryRef) -> PDFHighlighterAnnotation? {
+        guard let rect = rectFor(annotation) else { return nil }
+        let highlighter = PDFHighlighterAnnotation()
+        highlighter.rect = rect
+        return highlighter
+    }
+    
     private func buildAnnotationLinksList() {
         links = []
         var pageAnnotations: CGPDFArrayRef? = nil
@@ -139,11 +146,19 @@ internal class PDFPageContent: UIView {
                     
                 var annotationSubtype: UnsafePointer<Int8>? = nil
                 guard CGPDFDictionaryGetName(annotationDictionary!, "Subtype", &annotationSubtype) else { continue }
-                guard strcmp(annotationSubtype, "Link") == 0 else { continue }
-                guard let documentLink = linkFromAnnotation(annotationDictionary!) else { continue }
-                links.append(documentLink)
-            }
+                
+                if strcmp(annotationSubtype, PDFAnnotationType.link.rawValue) == 0 {
+                    guard let documentLink = linkFromAnnotation(annotationDictionary!) else { continue }
+                    links.append(documentLink)
+                }
+                
+                if strcmp(annotationSubtype, PDFAnnotationType.highlighter.rawValue) == 0 {
+                    guard let highlight = highlightFromAnnotation(annotationDictionary!) else { continue }
+                    addSubview(highlight.view)
+                }
+            } 
         }
+        
         self.highlightPageLinks()
     }
     
