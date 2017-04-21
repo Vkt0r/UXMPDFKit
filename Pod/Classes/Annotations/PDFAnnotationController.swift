@@ -8,11 +8,12 @@
 
 import Foundation
 
-public enum PDFAnnotationType {
+public enum PDFAnnotationType: String {
     case none
     case pen
-    case text
-    case highlighter
+    case text = "Free Text"
+    case highlighter = "Highlight"
+    case link = "Link"
 }
 
 public protocol PDFAnnotationControllerProtocol {
@@ -243,7 +244,7 @@ open class PDFAnnotationController: UIViewController {
             currentAnnotation = PDFHighlighterAnnotation()
         case .text:
             currentAnnotation = PDFTextAnnotation()
-        case .none:
+        default:
             break
         }
     }
