@@ -9,14 +9,15 @@
 import UIKit
 
 internal class PDFPageContent: UIView {
+    
     private let pdfDocRef: CGPDFDocument
     private let pdfPageRef: CGPDFPage?
-    private let pageAngle: Int /// 0, 90, 180, 270
+    fileprivate let pageAngle: Int /// 0, 90, 180, 270
     private var links: [PDFDocumentLink] = []
-    private var pageWidth: CGFloat = 0.0
-    private var pageHeight: CGFloat = 0.0
-    private var pageOffsetX: CGFloat = 0.0
-    private var pageOffsetY: CGFloat = 0.0
+    fileprivate var pageWidth: CGFloat = 0.0
+    fileprivate var pageHeight: CGFloat = 0.0
+    fileprivate var pageOffsetX: CGFloat = 0.0
+    fileprivate var pageOffsetY: CGFloat = 0.0
     private var page: Int = 0
     
     var cropBoxRect: CGRect
@@ -122,12 +123,75 @@ internal class PDFPageContent: UIView {
     }
     
     private func linkFromAnnotation(_ annotation: CGPDFDictionaryRef) -> PDFDocumentLink? {
+        guard let rect = rectFor(annotation) else { return nil }
+        return PDFDocumentLink(rect: rect, dictionary:annotation)
+    }
+    
+    private func buildAnnotationLinksList() {
+        links = []
+        var pageAnnotations: CGPDFArrayRef? = nil
+        let pageDictionary: CGPDFDictionaryRef = pdfPageRef!.dictionary!
+        
+        if CGPDFDictionaryGetArray(pageDictionary, "Annots", &pageAnnotations) {
+            for i in 0...CGPDFArrayGetCount(pageAnnotations!) {
+                var annotationDictionary: CGPDFDictionaryRef? = nil
+                guard CGPDFArrayGetDictionary(pageAnnotations!, i, &annotationDictionary) else { continue }
+                    
+                var annotationSubtype: UnsafePointer<Int8>? = nil
+                guard CGPDFDictionaryGetName(annotationDictionary!, "Subtype", &annotationSubtype) else { continue }
+                guard strcmp(annotationSubtype, "Link") == 0 else { continue }
+                guard let documentLink = linkFromAnnotation(annotationDictionary!) else { continue }
+                links.append(documentLink)
+            }
+        }
+        self.highlightPageLinks()
+    }
+    
+    //MARK: - Gesture Recognizer
+    func processSingleTap(_ recognizer: UIGestureRecognizer) -> PDFAction? {
+        guard recognizer.state == .recognized else { return nil }
+        guard links.count > 0 else { return nil }
+        
+        let point = recognizer.location(in: self)
+        
+        for link in links where link.rect.contains(point) {
+            return PDFAction.fromPDFDictionary(link.dictionary, documentReference: pdfDocRef)
+        }
+        return nil
+    }
+    
+    //MARK: - CATiledLayer Delegate Methods
+    override func draw(_ layer: CALayer, in ctx: CGContext) {
+        guard let pdfPageRef = pdfPageRef else { return }
+        ctx.setFillColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+        ctx.fill(ctx.boundingBoxOfClipPath)
+        
+        /// Translate for page
+        ctx.translateBy(x: 0.0, y: bounds.size.height)
+        ctx.scaleBy(x: 1.0, y: -1.0)
+        ctx.concatenate((pdfPageRef.getDrawingTransform(.cropBox, rect: bounds, rotate: 0, preserveAspectRatio: true)))
+        
+        /// Render the PDF page into the context
+        ctx.drawPDFPage(pdfPageRef)
+    }
+    
+    deinit {
+        layer.contents = nil
+        layer.delegate = nil
+        layer.removeFromSuperlayer()
+    }
+}
+
+extension PDFPageContent {
+
+    func rectFor(_ annotation: CGPDFDictionaryRef) -> CGRect? {
+        
         var annotationRectArray: CGPDFArrayRef? = nil
         
         guard CGPDFDictionaryGetArray(annotation, "Rect", &annotationRectArray) else { return nil }
+        
         var lowerLeftX: CGPDFReal = 0.0
         var lowerLeftY: CGPDFReal = 0.0
-        
         var upperRightX: CGPDFReal = 0.0
         var upperRightY: CGPDFReal = 0.0
         
@@ -186,62 +250,6 @@ internal class PDFPageContent: UIView {
         let y = lowerLeftY
         let h = upperRightY - lowerLeftY
         
-        let rect = CGRect(x: x, y: y, width: w, height: h)
-        
-        return PDFDocumentLink(rect: rect, dictionary:annotation)
-    }
-    
-    private func buildAnnotationLinksList() {
-        links = []
-        var pageAnnotations: CGPDFArrayRef? = nil
-        let pageDictionary: CGPDFDictionaryRef = pdfPageRef!.dictionary!
-        
-        if CGPDFDictionaryGetArray(pageDictionary, "Annots", &pageAnnotations) {
-            for i in 0...CGPDFArrayGetCount(pageAnnotations!) {
-                var annotationDictionary: CGPDFDictionaryRef? = nil
-                guard CGPDFArrayGetDictionary(pageAnnotations!, i, &annotationDictionary) else { continue }
-                    
-                var annotationSubtype: UnsafePointer<Int8>? = nil
-                guard CGPDFDictionaryGetName(annotationDictionary!, "Subtype", &annotationSubtype) else { continue }
-                guard strcmp(annotationSubtype, "Link") == 0 else { continue }
-                guard let documentLink = linkFromAnnotation(annotationDictionary!) else { continue }
-                links.append(documentLink)
-            }
-        }
-        self.highlightPageLinks()
-    }
-    
-    //MARK: - Gesture Recognizer
-    func processSingleTap(_ recognizer: UIGestureRecognizer) -> PDFAction? {
-        guard recognizer.state == .recognized else { return nil }
-        guard links.count > 0 else { return nil }
-        
-        let point = recognizer.location(in: self)
-        
-        for link in links where link.rect.contains(point) {
-            return PDFAction.fromPDFDictionary(link.dictionary, documentReference: pdfDocRef)
-        }
-        return nil
-    }
-    
-    //MARK: - CATiledLayer Delegate Methods
-    override func draw(_ layer: CALayer, in ctx: CGContext) {
-        guard let pdfPageRef = pdfPageRef else { return }
-        ctx.setFillColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-        ctx.fill(ctx.boundingBoxOfClipPath)
-        
-        /// Translate for page
-        ctx.translateBy(x: 0.0, y: bounds.size.height)
-        ctx.scaleBy(x: 1.0, y: -1.0)
-        ctx.concatenate((pdfPageRef.getDrawingTransform(.cropBox, rect: bounds, rotate: 0, preserveAspectRatio: true)))
-        
-        /// Render the PDF page into the context
-        ctx.drawPDFPage(pdfPageRef)
-    }
-    
-    deinit {
-        layer.contents = nil
-        layer.delegate = nil
-        layer.removeFromSuperlayer()
+        return CGRect(x: x, y: y, width: w, height: h)
     }
 }
