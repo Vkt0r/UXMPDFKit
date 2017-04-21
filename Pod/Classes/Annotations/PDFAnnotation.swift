@@ -19,4 +19,10 @@ public protocol PDFAnnotation {
     func encode(with aCoder: NSCoder)
 }
 
+extension PDFAnnotation {
+    func touchStarted(_ touch: UITouch, point: CGPoint) { }
+    func touchMoved(_ touch: UITouch, point: CGPoint) { }
+    func touchEnded(_ touch: UITouch, point: CGPoint) { }
+}
+
 public protocol PDFAnnotationView { }
